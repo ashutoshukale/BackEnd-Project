@@ -7,18 +7,14 @@ import { ApiResponse } from "../utils/apiResponse.js";
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
-    const accessToken = user.generateAccessToken();
-    const refreshToken = user.generateRefeshToken();
+    const accessToken = await user.generateAccessToken();
+    const refreshToken = await user.generateRefreshToken();
 
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
-
     return { refreshToken, accessToken };
   } catch (error) {
-    throw new ApiError(
-      500,
-      "Something went Wrong while Generating Access and Refresh Tokens"
-    );
+    throw new ApiError(500, error);
   }
 };
 
@@ -102,20 +98,18 @@ const loginUser = asyncHandler(async (req, res) => {
   //access and refresh token
   //send secure cookies
   //
-
   const { username, email, password } = req.body;
-  if (!username || !email) {
+  if (!username && !email) {
     throw new ApiError(400, "Username or Email is Required");
   }
 
-  const user = User.findOne({
-    $or: [{ username }, { email }],
+  const user = await User.findOne({
+    $or: [{ username: username }, { email: email }],
   });
 
   if (!user) {
     throw new ApiError(404, "User does not exist");
   }
-
   const isPasswordValid = await user.isPasswordCorrect(password);
 
   if (!isPasswordValid) {
@@ -126,7 +120,7 @@ const loginUser = asyncHandler(async (req, res) => {
     user._id
   );
 
-  const loggerInUser = await User.findById(user._id).select(
+  const loggedInUser = await User.findById(user._id).select(
     "-password -refreshToken"
   );
 
@@ -139,7 +133,11 @@ const loginUser = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        { user: loggerInUser, accessToken, refreshToken },
+        {
+          user: loggedInUser,
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+        },
         "User Logged In Successfully"
       )
     );
@@ -149,7 +147,7 @@ const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set: { refreshToken: undefined },
+      $unset: { refreshToken: 1 },
     },
     { new: true }
   );
